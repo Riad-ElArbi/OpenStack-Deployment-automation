@@ -1,0 +1,18 @@
+---
+# ── Kolla-Ansible globals.yml  –  2025.2 All-in-One ──────────
+workaround_ansible_issue_8743: yes
+
+kolla_base_distro: "ubuntu"
+
+# Internal VIP – must be a FREE IP on the management subnet (172.20.112.0/20)
+kolla_internal_vip_address: "172.20.112.251"
+
+# Management network interface (eth0 carries API & internal traffic)
+network_interface: "eth0"
+
+# External Neutron interface – NO IP address assigned on this NIC
+neutron_external_interface: "eth1"
+
+# Cinder block storage (LVM backend on /dev/sdb)
+enable_cinder: "yes"
+enable_cinder_backend_lvm: "yes"
