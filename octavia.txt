@@ -1,0 +1,14 @@
+sudo mkdir -p /etc/kolla/config/octavia
+sudo chown -R $USER:$USER /etc/kolla/config
+kolla-ansible octavia-certificates -i ./all-in-one
+ls /etc/kolla/config/octavia/
+```
+
+You should see exactly these 4 files:
+```
+client.cert-and-key.pem
+client_ca.cert.pem
+server_ca.cert.pem
+server_ca.key.pem
+
+kolla-ansible prechecks -i ./all-in-one

@@ -1,0 +1,40 @@
+problem that he does : 
+
+TASK [octavia : Create security groups for octavia] ********************************************************************
+[ERROR]: Task failed: Module failed: HttpException: 503: Server Error for url: http://172.18.227.253:9696/v2.0/security-groups/lb-mgmt-sec-grp, 503 Service Unavailable: No server is available to handle this request.
+Origin: /home/stack/kolla-venv/share/kolla-ansible/ansible/roles/octavia/tasks/prepare.yml:57:3
+55   register: project_info
+56
+57 - name: Create security groups for octavia
+     ^ column 3
+failed: [localhost] (item=lb-mgmt-sec-grp) => {"action": "openstack.cloud.security_group", "ansible_loop_var": "item", "changed": false, "extra_data": {"data": null, "details": "503 Service Unavailable: No server is available to handle this request.", "response": "<html><body><h1>503 Service Unavailable</h1>\nNo server is available to handle this request.\n</body></html>\n"}, "item": {"enabled": true, "name": "lb-mgmt-sec-grp", "rules": [{"protocol": "icmp"}, {"dst_port": 22, "protocol": "tcp", "src_port": 22}, {"dst_port": "9443", "protocol": "tcp", "src_port": "9443"}]}, "msg": "HttpException: 503: Server Error for url: http://172.18.227.253:9696/v2.0/security-groups/lb-mgmt-sec-grp, 503 Service Unavailable: No server is available to handle this request."}
+skipping: [localhost] => (item=lb-health-mgr-sec-grp)
+PLAY RECAP 
+
+
+
+sudo nano /etc/kolla/config/neutron/neutron.conf
+sudo nano /etc/kolla/config/neutron.conf
+
+
+
+sudo nano /etc/kolla/neutron-server/neutron.conf
+
+[service_providers]
+service_provider = FIREWALL_V2:fwaas_db:neutron_fwaas.services.firewall.service_drivers.agents.agents.FirewallAgentDriver:default
+service_provider = VPN:openswan:neutron_vpnaas.services.vpn.service_drivers.ipsec.IPsecVPNDriver:default
+
+
+
+sudo nano /etc/kolla/neutron-rpc-server/neutron.conf
+
+[service_providers]
+service_provider = FIREWALL_V2:fwaas_db:neutron_fwaas.services.firewall.service_drivers.agents.agents.FirewallAgentDriver:default
+service_provider = VPN:openswan:neutron_vpnaas.services.vpn.service_drivers.ipsec.IPsecVPNDriver:default
+
+sudo nano /etc/kolla/neutron-periodic-worker/neutron.conf
+
+[service_providers]
+service_provider = FIREWALL_V2:fwaas_db:neutron_fwaas.services.firewall.service_drivers.agents.agents.FirewallAgentDriver:default
+service_provider = VPN:openswan:neutron_vpnaas.services.vpn.service_drivers.ipsec.IPsecVPNDriver:default
+
