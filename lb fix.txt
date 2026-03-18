@@ -1,0 +1,46 @@
+Issue 7: Horizon Errors (Unable to retrieve flavors/networks/instances)
+
+Three root causes fixed in order:
+Fix A: Missing flavors.
+
+
+
+bashopenstack flavor create --id 1 --ram 512  --disk 1  --vcpus 1 m1.tiny
+openstack flavor create --id 2 --ram 2048 --disk 20 --vcpus 1 m1.small
+openstack flavor create --id 3 --ram 4096 --disk 40 --vcpus 2 m1.medium
+
+
+Fix B: Horizon custom settings — wrong filename
+
+
+Kolla expects exactly _9999-custom-settings.py:
+
+
+bashsudo tee /etc/kolla/config/horizon/_9999-custom-settings.py << 'EOF'
+OPENSTACK_HOST = "172.19.112.251"
+OPENSTACK_KEYSTONE_URL = "http://172.19.112.251:5000/v3"
+OPENSTACK_ENDPOINT_TYPE = "publicURL"
+EOF
+
+kolla-ansible reconfigure -i ~/all-in-one --tags horizon
+docker restart horizon
+
+
+Fix C: Keystone endpoints missing /v3
+
+
+Root cause of ServiceCatalogException: identity
+bash# Get endpoint IDs
+openstack endpoint list --service identity -f value -c ID
+
+# Fix both endpoints
+openstack endpoint set \
+  --url http://172.19.112.251:5000/v3 \
+  <public-endpoint-id>
+
+openstack endpoint set \
+  --url http://172.19.112.251:5000/v3 \
+  <internal-endpoint-id>
+
+# Restart horizon
+docker restart horizon

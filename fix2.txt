@@ -1,0 +1,74 @@
+(kolla-venv) stack@stack:~$ openstack endpoint list --service identity
++--------------------------+-----------+--------------+--------------+---------+-----------+---------------------------+
+| ID                       | Region    | Service Name | Service Type | Enabled | Interface | URL                       |
++--------------------------+-----------+--------------+--------------+---------+-----------+---------------------------+
+| 1a0f63cdfc48410fb91bd3ee | RegionOne | keystone     | identity     | True    | public    | http://172.19.112.251:500 |
+| 5cca7b97                 |           |              |              |         |           | 0                         |
+| 37a85ea6c4a54889b8bfbc78 | RegionOne | keystone     | identity     | True    | internal  | http://172.19.112.251:500 |
+| 9100d187                 |           |              |              |         |           | 0                         |
++--------------------------+-----------+--------------+--------------+---------+-----------+---------------------------+
+(kolla-venv) stack@stack:~$ openstack endpoint set \
+>   --url http://172.19.112.251:5000/v3 \
+>   1a0f63cdfc48410fb91bd3ee5cca7b97
+(kolla-venv) stack@stack:~$ openstack endpoint set \
+>   --url http://172.19.112.251:5000/v3 \
+>   37a85ea6c4a54889b8bfbc789100d187
+(kolla-venv) stack@stack:~$ sudo tee /etc/kolla/config/horizon/_9999-custom-settings.py << 'EOF'
+> OPENSTACK_HOST = "172.19.112.251"
+> OPENSTACK_KEYSTONE_URL = "http://172.19.112.251:5000/v3"
+> OPENSTACK_ENDPOINT_TYPE = "publicURL"
+> EOF
+OPENSTACK_HOST = "172.19.112.251"
+OPENSTACK_KEYSTONE_URL = "http://172.19.112.251:5000/v3"
+OPENSTACK_ENDPOINT_TYPE = "publicURL"
+(kolla-venv) stack@stack:~$ kolla-ansible reconfigure -i ~/all-in-one --tags horizon
+
+
+
+# Get endpoint IDs
+openstack endpoint list --service identity
+
+# Update public endpoint
+openstack endpoint set \
+  --url http://172.19.112.251:5000/v3 \
+  1a0f63cdfc48410fb91bd3ee5cca7b97
+
+# Update internal endpoint  
+openstack endpoint set \
+  --url http://172.19.112.251:5000/v3 \
+  37a85ea6c4a54889b8bfbc789100d187
+
+
+
+sudo tee /etc/kolla/config/horizon/_9999-custom-settings.py << 'EOF'
+OPENSTACK_HOST = "172.19.112.251"
+OPENSTACK_KEYSTONE_URL = "http://172.19.112.251:5000/v3"
+OPENSTACK_ENDPOINT_TYPE = "publicURL"
+EOF
+
+kolla-ansible reconfigure -i ~/all-in-one --tags horizon
+docker restart horizon
+
+
+(kolla-venv) stack@stack:~$ openstack endpoint list --service identity -f value -c ID
+1a0f63cdfc48410fb91bd3ee5cca7b97
+37a85ea6c4a54889b8bfbc789100d187
+
+
+# Update public endpoint
+openstack endpoint set \
+  --url http://172.19.112.251:5000/v3 \
+  1a0f63cdfc48410fb91bd3ee5cca7b97
+
+# Update internal endpoint
+openstack endpoint set \
+  --url http://172.19.112.251:5000/v3 \
+  37a85ea6c4a54889b8bfbc789100d187
+
+# Verify
+openstack endpoint list --service identity
+
+
+docker restart horizon
+sleep 10
+
