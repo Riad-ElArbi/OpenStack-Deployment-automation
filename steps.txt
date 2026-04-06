@@ -1,0 +1,144 @@
+sudo visudo — Edit sudoers file for passwordless sudo (add ubuntu   ALL=(ALL:ALL) NOPASSWD:ALL)
+Set-VMProcessor -VMName stack -ExposeVirtualizationExtensions $true
+
+sudo apt install cpuchecker
+sudo kvm-ok
+sudo modprobe kvm-intel — Load intel KVM kernel module
+sudo sh -c "echo 'options kvm-intel nested=1' >> /etc/modprobe.d/kvm-intel.conf" — Enable nested virtualization for intel CPUs
+sudo modprobe -r kvm-intel — Unload intel KVM module
+sudo modprobe kvm-intel — Reload intel KVM module
+cat /sys/module/kvm_intel/parameters/nested
+
+sudo nano /etc/netplan/network.yaml
+sudo netplan apply
+
+sudo fdisk -l — List disks
+sudo pvcreate /dev/sdb — Initialize physical volume for LVM
+sudo vgcreate cinder-volumes /dev/sdb — Create LVM volume group for Cinder
+sudo vgs — Show LVM volume groups
+
+sudo apt update — Update package lists
+sudo apt upgrade -y — Upgrade system packages
+sudo apt install git python3-dev libffi-dev gcc libssl-dev libdbus-glib-1-dev python3-venv -y — Install Kolla-Ansible dependencies
+
+python3 -m venv ~/kolla-venv — Create Python virtual environment
+source ~/kolla-venv/bin/activate — Activate Python virtual environment
+pip install -U pip — Upgrade pip
+pip install docker pkgconfig dbus-python
+
+
+pip install git+https://opendev.org/openstack/kolla-ansible@2025.2
+
+sudo mkdir -p /etc/kolla — Create Kolla config directory
+sudo chown $USER:$USER /etc/kolla — Change ownership of Kolla config directory
+cp -r ~/kolla-venv/share/kolla-ansible/etc_examples/kolla/* /etc/kolla — Copy example config files
+ls ~/kolla-venv/share/kolla-ansible/ansible/inventory/ — List inventory files
+head -20 ~/kolla-venv/share/kolla-ansible/ansible/inventory/all-in-one — Show first 20 lines of all-in-one inventory
+cp ~/kolla-venv/share/kolla-ansible/ansible/inventory/all-in-one . — Copy inventory file to home directory
+kolla-ansible install-deps — Install Kolla-Ansible dependencies
+kolla-genpwd — Generate passwords for OpenStack services
+cat /etc/kolla/passwords.yml
+
+
+
+
+mkdir -p /etc/kolla/config/neutron
+sudo nano /etc/kolla/config/neutron/neutron.conf
+
+[service_providers]
+service_provider = FIREWALL_V2:fwaas_db:neutron_fwaas.services.firewall.service_drivers.agents.agents.FirewallAgentDriver:default
+service_provider = VPN:openswan:neutron_vpnaas.services.vpn.service_drivers.ipsec.IPsecVPNDriver:default
+
+sudo nano /etc/kolla/config/neutron.conf
+
+[service_providers]
+service_provider = FIREWALL_V2:fwaas_db:neutron_fwaas.services.firewall.service_drivers.agents.agents.FirewallAgentDriver:default
+service_provider = VPN:openswan:neutron_vpnaas.services.vpn.service_drivers.ipsec.IPsecVPNDriver:default
+
+
+
+sudo mkdir -p /etc/kolla/config/horizon
+
+sudo tee /etc/kolla/config/horizon/_9999-custom-settings.py << 'EOF'
+OPENSTACK_HOST = "vip"
+OPENSTACK_KEYSTONE_URL = "http://vip:5000/v3"
+OPENSTACK_ENDPOINT_TYPE = "publicURL"
+EOF
+
+
+sudo nano /etc/kolla/globals.yml
+
+
+# Services
+enable_cinder: "yes"
+enable_cinder_backend_lvm: "yes"
+enable_horizon: "yes"
+enable_octavia_jobboard: "no"
+enable_valkey: "no"
+enable_octavia: "yes"
+enable_neutron_fwaas: "yes"
+enable_neutron_vpnaas: "yes"
+
+# Octavia / Amphora Automation (The fix for "Offline" status)
+octavia_auto_configure: "yes"
+octavia_network_type: "tenant"
+octavia_amp_image_tag: "amphora"
+
+# This block ensures Kolla creates the flavor with the right metadata
+octavia_amp_flavor:
+  name: "amphora"
+  is_public: no
+  vcpus: 1
+  ram: 1024
+  disk: 5
+
+then deploy 
+
+kolla-ansible bootstrap-servers -i ./all-in-one — Prepare host for OpenStack deployment
+kolla-ansible prechecks -i ./all-in-one — Run pre-deployment checks
+kolla-ansible deploy -i ./all-in-one — Deploy OpenStack services
+
+
+
+pip install python-openstackclient -c https://releases.openstack.org/constraints/upper/2025.2
+
+kolla-ansible post-deploy -i ~/all-in-one
+
+# Install CLI tools
+pip install python-openstackclient python-octaviaclient
+
+mkdir -p ~/.config/openstack — Create OpenStack CLI config directory
+cp /etc/kolla/clouds.yaml ~/.config/openstack/clouds.yaml — Copy clouds.yaml for CLI
+sudo nano .bashrc — Edit bashrc to set environment variables
+export OS_CLOUD=kolla-admin — Set default OpenStack cloud
+source ~/kolla-venv/bin/activate — Activate Python virtual environment
+sudo usermod -aG docker $USER — Add user to docker group
+Ctrl+D — Log out
+
+
+. /etc/kolla/admin-openrc.sh
+
+openstack endpoint list --service identity -f value -c ID
+
+openstack endpoint set --url http://vip:5000/v3 <PUBLIC_ENDPOINT_ID>
+openstack endpoint set --url http://vip:5000/v3 <INTERNAL_ENDPOINT_ID>
+
+
+
+
+# Download (if not already done)
+wget https://tarballs.opendev.org/openstack/octavia/test-images/test-only-amphora-x64-haproxy-ubuntu-jammy.qcow2
+
+# Upload with the mandatory tag
+openstack image create "amphora-v2" \
+  --file test-only-amphora-x64-haproxy-ubuntu-jammy.qcow2 \
+  --disk-format qcow2 \
+  --container-format bare \
+  --tag amphora \
+  --private
+
+
+
+cp kolla-venv/share/kolla-ansible/init-runonce . — Copy init-runonce script
+sudo nano init-runonce — Edit init-runonce script
+./init-runonce — Run init-runonce script
