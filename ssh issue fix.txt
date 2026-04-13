@@ -1,0 +1,100 @@
+# 1. Create the Internal Switch (isolated from university, visible only to host + VM)
+New-VMSwitch -Name "OpenStack-External" -SwitchType Internal
+
+# 2. Find the new virtual adapter name (usually "vEthernet (OpenStack-External)")
+Get-NetAdapter | Where-Object { $_.Name -like "*OpenStack*" }
+
+# 3. Assign the gateway IP — this is the address OpenStack will use as its external gateway
+New-NetIPAddress `
+    -InterfaceAlias "vEthernet (OpenStack-External)" `
+    -IPAddress 192.168.200.1 `
+    -PrefixLength 24
+
+# 4. Create the NAT rule — this is your PAT implementation
+New-NetNat `
+    -Name "OpenStackNAT" `
+    -InternalIPInterfaceAddressPrefix "192.168.200.0/24"
+
+# 5. Allow inbound traffic from the VM through Windows Firewall on that adapter
+New-NetFirewallRule `
+    -DisplayName "OpenStack-VM-Inbound" `
+    -Direction Inbound `
+    -InterfaceAlias "vEthernet (OpenStack-External)" `
+    -Action Allow
+
+# 6. Verify everything looks correct
+Get-NetNat
+Get-NetIPAddress -InterfaceAlias "vEthernet (OpenStack-External)"
+
+
+# Shut down the VM first
+Stop-VM -Name "YourVMName" -Force
+
+# Check current adapter names and which switch they're on
+Get-VMNetworkAdapter -VMName "YourVMName"
+
+# Move eth1 (second adapter) to the new Internal Switch
+# Replace "Network Adapter 2" with whatever name Get-VMNetworkAdapter showed
+Set-VMNetworkAdapter `
+    -VMName "YourVMName" `
+    -Name "Network Adapter 2" `
+    -SwitchName "OpenStack-External"
+
+# Enable MAC spoofing on eth1 — this is critical, don't skip it
+Set-VMNetworkAdapter `
+    -VMName "YourVMName" `
+    -Name "Network Adapter 2" `
+    -MacAddressSpoofing On
+
+# Verify
+Get-VMNetworkAdapter -VMName "YourVMName" | Select Name, SwitchName, MacAddressSpoofing
+
+# Start the VM
+Start-VM -Name "YourVMName"
+
+source /etc/kolla/admin-openrc.sh
+
+# --- Tear down init-runonce resources ---
+
+# 1. Remove floating IPs from instances
+openstack server list  # note instance names
+openstack floating ip list  # note floating IP IDs
+openstack server remove floating ip <instance-name> <floating-ip>
+openstack floating ip delete <floating-ip-id>
+
+# 2. Detach router from the old external network
+openstack router unset --external-gateway demo-router
+
+# 3. Delete the old public subnet and network
+openstack subnet list  # find the public subnet ID
+openstack subnet delete <public-subnet-id>
+openstack network delete public1
+
+# --- Rebuild with new subnet ---
+
+# 4. Create new external network (flat, same physnet1, same br-ex — nothing physical changes)
+openstack network create \
+    --external \
+    --provider-physical-network physnet1 \
+    --provider-network-type flat \
+    public1
+
+# 5. Create new external subnet pointing to Windows as gateway
+openstack subnet create \
+    --network public1 \
+    --subnet-range 192.168.200.0/24 \
+    --gateway 192.168.200.1 \
+    --no-dhcp \
+    --allocation-pool start=192.168.200.100,end=192.168.200.200 \
+    public1-subnet
+
+# 6. Reconnect the router
+openstack router set --external-gateway public1 demo-router
+
+# 7. Allocate a new floating IP and assign it
+openstack floating ip create public1
+openstack server add floating ip <instance-name> <new-floating-ip>
+
+# 8. Verify the router's external port got an IP from the new pool
+openstack router show demo-router | grep external
+
