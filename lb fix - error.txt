@@ -1,0 +1,170 @@
+openstack network show lb-mgmt-net -f value -c id
+
+NET_ID=$(openstack network show lb-mgmt-net -f value -c id)
+
+openstack port create \
+>   --network $NET_ID \
+>   --device-owner Octavia:health-mgr \
+>   --host $(hostname) \
+>   octavia-health-manager-listen-port
+
+PORT_ID=$(openstack port show octavia-health-manager-listen-port -f value -c id)
+
+PORT_MAC=$(openstack port show octavia-health-manager-listen-port -f value -c mac_address)
+
+PORT_IP=$(openstack port show octavia-health-manager-listen-port -f value -c fixed_ips \
+  | grep -oP '"ip_address": "\K[^"]+' | head -1)
+
+echo "Port ID : $PORT_ID"
+Port ID : 58242aa5-7e94-457b-9567-76e5a91e4335
+ echo "Port MAC: $PORT_MAC"
+Port MAC: fa:16:3e:15:0d:3b
+ echo "Port IP : $PORT_IP"
+Port IP :
+
+sudo apt install -y openvswitch-switch
+
+sudo ovs-vsctl add-port br-int o-hm0 \
+   -- set Interface o-hm0 type=internal \
+   -- set Interface o-hm0 external-ids:iface-status=active \
+   -- set Interface o-hm0 external-ids:attached-mac=$PORT_MAC \
+   -- set Interface o-hm0 external-ids:iface-id=$PORT_ID \
+   -- set Interface o-hm0 external-ids:skip_cleanup=true
+
+sudo ip link set o-hm0 address $PORT_MAC
+
+sudo ip link set o-hm0 up
+
+openstack port show octavia-health-manager-listen-port -f table -c fixed_ips -c mac_address -c id
+
+PORT_IP=$(openstack port show octavia-health-manager-listen-port \
+   -f json -c fixed_ips | python3 -c \
+   "import sys,json; data=json.load(sys.stdin); print(data['fixed_ips'][0]['ip_address'])")
+
+PORT_MAC=$(openstack port show octavia-health-manager-listen-port \
+   -f value -c mac_address)
+
+PORT_ID=$(openstack port show octavia-health-manager-listen-port \
+   -f value -c id)
+
+ echo "PORT_IP  = $PORT_IP"
+PORT_IP  = 10.1.0.76
+
+ echo "PORT_MAC = $PORT_MAC"
+PORT_MAC = fa:16:3e:15:0d:3b
+
+ echo "PORT_ID  = $PORT_ID"
+PORT_ID  = 58242aa5-7e94-457b-9567-76e5a91e4335
+
+sudo ip addr add ${PORT_IP}/24 dev o-hm0
+
+sudo ip link set o-hm0 up
+
+ip addr show o-hm0
+
+docker exec octavia_health_manager grep -E "bind_ip|bind_port" /etc/octavia/octavia.conf
+sudo sed -i "s/^bind_ip = .*/bind_ip = 10.1.0.76/" /etc/kolla/octavia/octavia.conf
+grep "bind_ip" /etc/kolla/octavia/octavia.conf
+docker restart octavia_health_manager
+sleep 8
+
+riyad.elarby@gmail.com profile : 
+create o-hm0 and assign to it an ip address :
+
+sudo find /etc/kolla -name "octavia.conf" 2>/dev/null
+
+sudo docker inspect octavia_health_manager | grep -A5 "Mounts"
+ls /etc/kolla/octavia-health-manager/
+
+sudo sed -i "s/^bind_ip = .*/bind_ip = 10.1.0.76/" /etc/kolla/octavia-health-manager/octavia.conf
+
+grep "bind_ip" /etc/kolla/octavia-health-manager/octavia.conf
+
+docker restart octavia_health_manager
+
+sleep 8
+
+sudo tee /etc/systemd/system/octavia-o-hm0.service << 'EOF'
+[Unit]
+Description=Octavia o-hm0 health manager interface
+After=network.target openvswitch-switch.service docker.service
+Requires=openvswitch-switch.service docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash -c '\
+  ovs-vsctl --may-exist add-port br-int o-hm0 \
+    -- set Interface o-hm0 type=internal \
+    -- set Interface o-hm0 external-ids:iface-status=active \
+    -- set Interface o-hm0 external-ids:attached-mac=fa:16:3e:15:0d:3b \
+    -- set Interface o-hm0 external-ids:iface-id=58242aa5-7e94-457b-9567-76e5a91e4335 \
+    -- set Interface o-hm0 external-ids:skip_cleanup=true && \
+  ip link set o-hm0 address fa:16:3e:15:0d:3b && \
+  ip link set o-hm0 up && \
+  ip addr add 10.1.0.76/24 dev o-hm0 || true'
+ExecStop=/sbin/ip link set o-hm0 down
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable octavia-o-hm0.service
+sudo systemctl start octavia-o-hm0.service
+sudo systemctl status octavia-o-hm0.service
+
+# Check the flavor exists and its specs
+openstack flavor show 9c703957-662d-4050-ad91-bc22abadaf12
+# Check the amphora image owner matches
+openstack image show amphora-v2 -c owner -c id -c tags
+
+# Check what amp_image_owner_id octavia has vs actual image owner
+docker exec octavia_worker grep "amp_image_owner_id" /etc/octavia/octavia.conf
+
+
+
+That's the exact problem. The amp_image_owner_id in Octavia's config is 79a4660b... but the actual owner of the amphora-v2 image is 311c4c5c.... Octavia can't find the image, so it can never boot the amphora VM.
+
+
+for f in worker health-manager housekeeping api; do
+  sudo sed -i "s/^amp_image_owner_id = .*/amp_image_owner_id = 311c4c5c57ad4e57b98bea28c8607d29/" \
+    /etc/kolla/octavia-$f/octavia.conf
+done
+
+# Verify the change
+grep "amp_image_owner_id" /etc/kolla/octavia-worker/octavia.conf
+
+
+docker restart octavia_worker octavia_health_manager octavia_housekeeping octavia_api
+sleep 10
+docker ps | grep octavia
+
+
+
+
+
+
+
+problem 2 :
+
+
+Root cause: controller_ip_port_list = 172.20.160.200:5555 in both octavia-health-manager and octavia-worker configs — amphora sends heartbeats to the deploy NIC, which is unreachable from lb-mgmt-net. Health manager bound to 10.1.0.76:5555 never receives them → OFFLINE
+
+
+sudo sed -i '/octavia_hm_hosts/d' /etc/kolla/globals.yml
+
+sudo sed -i 's/#octavia_network_interface: "{{ api_interface }}"/octavia_network_interface: "o-hm0"/' /etc/kolla/globals.yml
+
+grep -E "octavia_hm_hosts|octavia_network_interface" /etc/kolla/globals.yml
+
+kolla-ansible reconfigure -t octavia -i ~/kolla-venv/share/kolla-ansible/ansible/inventory/all-in-one
+
+sudo grep "controller_ip_port_list" \
+  /etc/kolla/octavia-health-manager/octavia.conf \
+  /etc/kolla/octavia-worker/octavia.conf
+
+sudo ss -tulnp | grep 5555
+
+
+make sure you do step 1 after the redeploy unless you do it in the config file 
