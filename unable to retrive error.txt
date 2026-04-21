@@ -1,0 +1,23 @@
+The Problem
+When you initially deployed OpenStack with kolla-ansible deploy, Octavia (the Load Balancer service) was either enabled after the initial deploy or partially skipped. This meant:
+
+Octavia's containers (octavia_api, octavia_worker, etc.) were running fine
+Octavia was correctly binding to port 9876 on the node IP 172.20.160.100
+But HAProxy had no entry for port 9876 — it was generated before Octavia was in the picture
+
+So when Horizon (or the CLI) tried to reach the Octavia API through the VIP 172.20.160.111:9876, HAProxy had nothing to forward the request to → Connection refused.
+
+"Unable to retrieve load balancers/flavors/availability zones" in Horizon all pointed to Octavia API being unreachable
+Found the missing HAProxy config — haproxy.cfg had zero entries for port 9876, meaning Octavia was never registered as a backend
+
+
+
+fix :
+
+kolla-ansible reconfigure -i ~./all-in-one --tags haproxy,octavia
+
+docker exec haproxy cat /etc/haproxy/haproxy.cfg | grep 9876
+
+This regenerated HAProxy's config to include Octavia's backend and reloaded it, making the VIP properly forward traffic to the Octavia API.
+
+

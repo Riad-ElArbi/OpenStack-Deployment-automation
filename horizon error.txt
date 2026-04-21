@@ -1,0 +1,14 @@
+docker error :
+
+The Problem
+During a previous kolla-ansible reconfigure (or deploy), the django-admin compress command ran as root instead of the horizon user. This left the compressed static CSS/JS files owned by root inside the container:
+/var/lib/kolla/venv/.../static/dashboard/css/output.7fc5eec926ad_sSW69I1.css  ← owned by root
+When Horizon's web process (which runs as the unprivileged horizon user) tried to serve or regenerate those files, it got a Permission Denied (errno 13) error. Django couldn't compress/render templates properly, so every page request crashed and showed the generic "Something went wrong" error.
+
+How We Fixed It
+
+   docker exec -u root horizon chown -R horizon:horizon /var/lib/kolla/venv/.../static/
+
+   docker exec -u horizon horizon bash -c "django-admin compress --force ..."
+
+Restarted the container
