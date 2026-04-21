@@ -1,0 +1,29 @@
+Root Cause Chain:
+Problem 1 — CPU mode
+Your OpenStack runs inside a Hyper-V VM (nested virtualization). Nova's default cpu_mode=custom with check=full caused libvirt to pause new VMs immediately on boot because certain CPU flags couldn't be exposed through nested Hyper-V.
+Fix: Set cpu_mode = host-passthrough in /etc/kolla/config/nova/nova-compute.conf
+
+Problem 2 — VIF plugging deadlock
+With nested Hyper-V, there's a circular deadlock:
+
+Nova waits for OVS to mark the port ACTIVE before resuming the VM
+OVS waits for the VM to be running before marking the port ACTIVE
+Neither side moved → 300 second timeout → misleading "Failed to allocate network" error
+
+Fix: Added to /etc/kolla/config/nova/nova-compute.conf:
+inivif_plugging_is_fatal = false
+vif_plugging_timeout = 0
+
+Problem 3 — OVS port missing VLAN tag
+Because of the vif_plugging_timeout = 0 fix, the VM boots before OVS fully activates the port. The port qvo4f51b98a-99 had no VLAN tag assigned, so the instance had no real network connectivity. Cloud-init ran, couldn't reach the metadata service at 169.254.169.254, fell back to DataSourceNone, and skipped SSH key injection entirely.
+Fix: Manually set the correct VLAN tag:
+bashsudo ovs-vsctl set port qvo4f51b98a-99 tag=1
+Then rebooted the instance so cloud-init re-ran with working network.
+
+The Permanent Fix Still Needed:
+The OVS tag fix won't survive reboots. The real permanent solution is to find the right balance — instead of vif_plugging_timeout = 0 (too aggressive), set a small timeout that gives OVS enough time to tag the port before the VM boots:
+inivif_plugging_is_fatal = false
+vif_plugging_timeout = 30
+This gives OVS 30 seconds to activate the port, and if it doesn't, Nova proceeds anyway without failing. Run:
+bashkolla-ansible reconfigure -i ~/all-in-one --tags nova
+This should make new instances work reliably without needing manual OVS tag fixes.
